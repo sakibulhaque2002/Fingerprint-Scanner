@@ -1,8 +1,5 @@
-﻿/* Move down content because we have a fixed navbar that is 50px tall */
-body {
-    padding-top: 50px;
+﻿body {
     padding-bottom: 20px;
-
 }
 
 body.view-mode-desktop {
@@ -141,10 +138,6 @@ textarea {
 }
 
 @media screen and (max-width: 767px) {
-    body {
-        padding-top: 52px;
-    }
-
     h1 {
         font-size: 30px;
     }
