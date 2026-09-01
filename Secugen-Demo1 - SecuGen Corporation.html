@@ -242,15 +242,49 @@ function showProgress() {
     renderResult(entries);
 }
 
+// Same-origin path handled by serve.py, which forwards it server-side to
+// the real enrollment API (adding auth there) so the browser never makes
+// a cross-origin call and CORS never comes into play.
+var ENROLL_API_URL = "/enroll/fingers";
+
 /*
     Called from the last finger's Enroll button. Builds the final array
-    covering all four fingers captured so far.
+    covering all four fingers captured so far, shows it, and submits it
+    to the enrollment API.
  */
 function finishEnrollment() {
     var entries = FINGERS.map(function (finger, idx) {
         return buildEnrollEntry(idx);
     });
     renderResult(entries);
+    submitEnrollment(entries);
+}
+
+function submitEnrollment(entries) {
+    setActionButton("enroll", "Submitting...", false);
+
+    var xhr = new XMLHttpRequest();
+    xhr.open("POST", ENROLL_API_URL, true);
+    xhr.setRequestHeader("Content-Type", "application/json");
+
+    xhr.onreadystatechange = function () {
+        if (xhr.readyState === 4) {
+            if (xhr.status >= 200 && xhr.status < 300) {
+                alert("Enrollment submitted successfully.\n" + xhr.responseText);
+            }
+            else {
+                alert("Enrollment API returned an error. Status: " + xhr.status + "\n" + xhr.responseText);
+            }
+            setActionButton("enroll", "Enroll", true);
+        }
+    };
+
+    xhr.onerror = function () {
+        alert("Failed to reach the local server at " + ENROLL_API_URL + ". Make sure serve.py is running.");
+        setActionButton("enroll", "Enroll", true);
+    };
+
+    xhr.send(JSON.stringify(entries));
 }
 
 function ErrorFunc(status) {

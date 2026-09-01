@@ -1,0 +1,8 @@
+127.0.0.1 - - [01/Sep/2026 18:49:38] "HEAD /Secugen-Demo1%20-%20SecuGen%20Corporation.html HTTP/1.1" 200 -
+127.0.0.1 - - [01/Sep/2026 18:49:53] "POST /enroll/fingers HTTP/1.1" 400 -
+127.0.0.1 - - [01/Sep/2026 18:50:45] "GET /Secugen-Demo1%20-%20SecuGen%20Corporation.html HTTP/1.1" 200 -
+127.0.0.1 - - [01/Sep/2026 18:50:45] "GET /Secugen-Demo1%20-%20SecuGen%20Corporation_files/Site.css HTTP/1.1" 304 -
+127.0.0.1 - - [01/Sep/2026 18:50:45] "GET /Secugen-Demo1%20-%20SecuGen%20Corporation_files/jsencrypt.min.js HTTP/1.1" 304 -
+127.0.0.1 - - [01/Sep/2026 18:50:45] code 404, message File not found
+127.0.0.1 - - [01/Sep/2026 18:50:45] "GET /.well-known/appspecific/com.chrome.devtools.json HTTP/1.1" 404 -
+127.0.0.1 - - [01/Sep/2026 18:51:36] "POST /enroll/fingers HTTP/1.1" 202 -

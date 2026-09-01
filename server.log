@@ -105,3 +105,24 @@
 ::1 - - [01/Sep/2026 17:50:19] "GET /Secugen-Demo1%20-%20SecuGen%20Corporation_files/bootstrap.js.download HTTP/1.1" 304 -
 ::1 - - [01/Sep/2026 17:50:19] "GET /Secugen-Demo1%20-%20SecuGen%20Corporation_files/respond.js.download HTTP/1.1" 304 -
 ::1 - - [01/Sep/2026 17:50:19] "GET /Secugen-Demo1%20-%20SecuGen%20Corporation_files/WebFormsJs HTTP/1.1" 304 -
+::ffff:127.0.0.1 - - [01/Sep/2026 18:13:45] "HEAD /Secugen-Demo1%20-%20SecuGen%20Corporation.html HTTP/1.1" 200 -
+::ffff:127.0.0.1 - - [01/Sep/2026 18:13:45] "GET /Secugen-Demo1%20-%20SecuGen%20Corporation.html HTTP/1.1" 200 -
+::1 - - [01/Sep/2026 18:13:56] "GET /Secugen-Demo1%20-%20SecuGen%20Corporation.html HTTP/1.1" 200 -
+::1 - - [01/Sep/2026 18:13:56] "GET /Secugen-Demo1%20-%20SecuGen%20Corporation_files/Site.css HTTP/1.1" 304 -
+::1 - - [01/Sep/2026 18:13:56] "GET /Secugen-Demo1%20-%20SecuGen%20Corporation_files/jsencrypt.min.js HTTP/1.1" 304 -
+::1 - - [01/Sep/2026 18:13:56] code 404, message File not found
+::1 - - [01/Sep/2026 18:13:56] "GET /.well-known/appspecific/com.chrome.devtools.json HTTP/1.1" 404 -
+::ffff:127.0.0.1 - - [01/Sep/2026 18:29:14] "HEAD /Secugen-Demo1%20-%20SecuGen%20Corporation.html HTTP/1.1" 200 -
+::ffff:127.0.0.1 - - [01/Sep/2026 18:29:14] "GET /Secugen-Demo1%20-%20SecuGen%20Corporation.html HTTP/1.1" 200 -
+::1 - - [01/Sep/2026 18:29:27] "GET /Secugen-Demo1%20-%20SecuGen%20Corporation.html HTTP/1.1" 200 -
+::1 - - [01/Sep/2026 18:29:27] "GET /Secugen-Demo1%20-%20SecuGen%20Corporation_files/modernizr-2.6.2.js.download HTTP/1.1" 304 -
+::1 - - [01/Sep/2026 18:29:27] "GET /Secugen-Demo1%20-%20SecuGen%20Corporation_files/bootstrap.css HTTP/1.1" 304 -
+::1 - - [01/Sep/2026 18:29:27] "GET /Secugen-Demo1%20-%20SecuGen%20Corporation_files/Site.css HTTP/1.1" 304 -
+::1 - - [01/Sep/2026 18:29:27] "GET /Secugen-Demo1%20-%20SecuGen%20Corporation_files/MsAjaxJs HTTP/1.1" 304 -
+::1 - - [01/Sep/2026 18:29:27] "GET /Secugen-Demo1%20-%20SecuGen%20Corporation_files/jquery-1.10.2.js.download HTTP/1.1" 304 -
+::1 - - [01/Sep/2026 18:29:27] "GET /Secugen-Demo1%20-%20SecuGen%20Corporation_files/jsencrypt.min.js HTTP/1.1" 304 -
+::1 - - [01/Sep/2026 18:29:27] "GET /Secugen-Demo1%20-%20SecuGen%20Corporation_files/bootstrap.js.download HTTP/1.1" 304 -
+::1 - - [01/Sep/2026 18:29:27] "GET /Secugen-Demo1%20-%20SecuGen%20Corporation_files/respond.js.download HTTP/1.1" 304 -
+::1 - - [01/Sep/2026 18:29:27] "GET /Secugen-Demo1%20-%20SecuGen%20Corporation_files/WebFormsJs HTTP/1.1" 304 -
+::1 - - [01/Sep/2026 18:29:27] code 404, message File not found
+::1 - - [01/Sep/2026 18:29:27] "GET /.well-known/appspecific/com.chrome.devtools.json HTTP/1.1" 404 -
