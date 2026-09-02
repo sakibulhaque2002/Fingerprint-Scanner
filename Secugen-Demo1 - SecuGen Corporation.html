@@ -69,13 +69,23 @@ Sys.WebForms.PageRequestManager._initialize('ctl00$ctl07', 'ctl01', [], [], [], 
                     <label for="userName">User</label>
                     <input type="text" id="userName" class="form-control" placeholder="e.g. sakib">
                 </div>
+                <div class="form-group">
+                    <label for="fingerSelect">Finger</label>
+                    <select id="fingerSelect" class="form-control" onchange="handleFingerSelectChange()">
+                        <option value="3">3 - Left Index Finger</option>
+                        <option value="4">4 - Left Thumb Finger</option>
+                        <option value="5" selected>5 - Right Thumb Finger</option>
+                        <option value="6">6 - Right Index Finger</option>
+                    </select>
+                </div>
             </div>
-            <h4 id="currentFingerLabel"></h4>
+            <h4 id="scanCountLabel"></h4>
         </div>
         <div class="col-sm-6 demo-panel fingerprint-stage">
             <img id="FPImage1" class="fingerprint-image" alt="Fingerprint Image">
             <div class="scan-actions">
-                <input type="button" id="actionBtn" class="btn btn-primary" value="Start" onclick="handleActionClick()">
+                <input type="button" id="actionBtn" class="btn btn-primary" value="Scan" onclick="handleActionClick()">
+                <input type="button" id="enrollBtn" class="btn btn-success" value="Enroll" onclick="handleEnrollClick()" disabled>
             </div>
         </div>
         <div class="col-sm-10">
@@ -128,8 +138,10 @@ var FINGERS = [
     { value: 5, label: "Right Thumb Finger", part: "thumb", mirror: false },
     { value: 6, label: "Right Index Finger", part: "index", mirror: false }
 ];
-var currentFingerIndex = 0;
+var DEFAULT_FINGER_VALUE = 5;
+var currentFingerIndex = FINGERS.findIndex(function (f) { return f.value === DEFAULT_FINGER_VALUE; });
 var scannedFingerprints = [];
+var scannedImages = [];
 
 /*
     Simple line-art hand icon used as a placement guide before a finger is
@@ -181,41 +193,58 @@ function showFingerGuideImage(fingerIndex) {
 }
 
 /*
-    actionBtn behaves differently depending on where we are in the sequence:
-      "scan"    - click captures the current finger (Start on finger 1, Retry on a failed capture)
-      "advance" - click moves to the next finger AND immediately captures it (no extra click needed)
-      "enroll"  - click (only on the last finger, once captured) builds and displays the final JSON
+    Restores a previously captured scan when the user switches back to an
+    already-scanned finger via the dropdown.
 */
-var actionMode = "scan";
-
-function updateFingerUI() {
-    var finger = FINGERS[currentFingerIndex];
-    var label = document.getElementById("currentFingerLabel");
-    if (label) {
-        label.textContent = "Finger " + (currentFingerIndex + 1) + " of " + FINGERS.length + ": " + finger.label + " (" + finger.value + ")";
-    }
-    showFingerGuideImage(currentFingerIndex);
+function showScannedImage(fingerIndex) {
+    var img = document.getElementById("FPImage1");
+    img.src = "data:image/bmp;base64," + scannedImages[fingerIndex];
+    img.style.transform = "none";
 }
 
-function setActionButton(mode, text, enabled) {
-    actionMode = mode;
+function updateFingerUI() {
+    if (scannedImages[currentFingerIndex]) {
+        showScannedImage(currentFingerIndex);
+    }
+    else {
+        showFingerGuideImage(currentFingerIndex);
+    }
+    updateScanCountLabel();
+}
+
+function updateScanCountLabel() {
+    var count = scannedFingerprints.filter(function (t) { return !!t; }).length;
+    var label = document.getElementById("scanCountLabel");
+    if (label) {
+        label.textContent = count + " of " + FINGERS.length + " fingers scanned";
+    }
+}
+
+function handleFingerSelectChange() {
+    var select = document.getElementById("fingerSelect");
+    var value = parseInt(select.value, 10);
+    var idx = FINGERS.findIndex(function (f) { return f.value === value; });
+    if (idx !== -1) {
+        currentFingerIndex = idx;
+        updateFingerUI();
+    }
+}
+
+function setActionButton(text, enabled) {
     var btn = document.getElementById("actionBtn");
     btn.value = text;
     btn.disabled = !enabled;
 }
 
+function setEnrollButtonEnabled(enabled) {
+    var btn = document.getElementById("enrollBtn");
+    if (btn) {
+        btn.disabled = !enabled;
+    }
+}
+
 function handleActionClick() {
-    if (actionMode === "scan") {
-        performScan(currentFingerIndex);
-    }
-    else if (actionMode === "advance") {
-        currentFingerIndex++;
-        updateFingerUI();
-        performScan(currentFingerIndex);
-    }
-    else if (actionMode === "enroll") {
-        finishEnrollment();
-    }
+    performScan(currentFingerIndex);
 }
 
 function performScan(fingerIndex) {
@@ -225,7 +254,7 @@ function performScan(fingerIndex) {
         return;
     }
 
-    setActionButton(actionMode, "Scanning...", false);
+    setActionButton("Scanning...", false);
 
     CallSGIFPGetData(function (result) {
         if (result.ErrorCode == 0) {
@@ -233,28 +262,23 @@ function performScan(fingerIndex) {
                 BMP data is in base 64 format
             */
             if (result.BMPBase64 && result.BMPBase64.length > 0) {
-                var fpImg = document.getElementById("FPImage1");
-                fpImg.src = "data:image/bmp;base64," + result.BMPBase64;
-                fpImg.style.transform = "none";
+                scannedImages[fingerIndex] = result.BMPBase64;
+                showScannedImage(fingerIndex);
             }
             scannedFingerprints[fingerIndex] = encryptAsChunksWithRsa(result.TemplateBase64, SECUGEN_RSA_PUBLIC_KEY_B64);
 
-            var isLast = fingerIndex === FINGERS.length - 1;
-            if (isLast) {
-                setActionButton("enroll", "Enroll", true);
-            }
-            else {
-                showProgress();
-                setActionButton("advance", "Next", true);
-            }
+            updateScanCountLabel();
+            showScannedResult();
+            setActionButton("Scan", true);
+            setEnrollButtonEnabled(true);
         }
         else {
             alert("Fingerprint Capture Error Code:  " + result.ErrorCode + ".\nDescription:  " + ErrorCodeToString(result.ErrorCode) + ".");
-            setActionButton("scan", fingerIndex === 0 ? "Start" : "Retry", true);
+            setActionButton("Scan", true);
         }
     }, function (status) {
         ErrorFunc(status);
-        setActionButton("scan", fingerIndex === 0 ? "Start" : "Retry", true);
+        setActionButton("Scan", true);
     });
 }
 
@@ -269,6 +293,16 @@ function buildEnrollEntry(fingerIndex) {
     };
 }
 
+function buildScannedEntries() {
+    var entries = [];
+    for (var i = 0; i < FINGERS.length; i++) {
+        if (scannedFingerprints[i]) {
+            entries.push(buildEnrollEntry(i));
+        }
+    }
+    return entries;
+}
+
 function renderResult(entries) {
     var pre = document.createElement("pre");
     pre.className = "result-textarea";
@@ -280,17 +314,11 @@ function renderResult(entries) {
 }
 
 /*
-    Shows the JSON captured so far (fingers 0..currentFingerIndex), called
-    right after each of the first three fingers finishes scanning.
+    Shows the JSON for every finger scanned so far. Called right after each
+    scan completes so the JSON is always visible immediately below.
 */
-function showProgress() {
-    var entries = [];
-    for (var i = 0; i <= currentFingerIndex; i++) {
-        if (scannedFingerprints[i]) {
-            entries.push(buildEnrollEntry(i));
-        }
-    }
-    renderResult(entries);
+function showScannedResult() {
+    renderResult(buildScannedEntries());
 }
 
 // Same-origin path handled by serve.py, which forwards it server-side to
@@ -299,20 +327,22 @@ function showProgress() {
 var ENROLL_API_URL = "/enroll/fingers";
 
 /*
-    Called from the last finger's Enroll button. Builds the final array
-    covering all four fingers captured so far, shows it, and submits it
-    to the enrollment API.
- */
-function finishEnrollment() {
-    var entries = FINGERS.map(function (finger, idx) {
-        return buildEnrollEntry(idx);
-    });
+    The Enroll button is available regardless of which finger is currently
+    selected. It submits whatever fingerprints have been scanned so far.
+*/
+function handleEnrollClick() {
+    var entries = buildScannedEntries();
+    if (entries.length === 0) {
+        alert("Scan at least one fingerprint before enrolling.");
+        return;
+    }
     renderResult(entries);
     submitEnrollment(entries);
 }
 
 function submitEnrollment(entries) {
-    setActionButton("enroll", "Submitting...", false);
+    setEnrollButtonEnabled(false);
+    document.getElementById("enrollBtn").value = "Submitting...";
 
     var xhr = new XMLHttpRequest();
     xhr.open("POST", ENROLL_API_URL, true);
@@ -326,13 +356,15 @@ function submitEnrollment(entries) {
             else {
                 alert("Enrollment API returned an error. Status: " + xhr.status + "\n" + xhr.responseText);
             }
-            setActionButton("enroll", "Enroll", true);
+            document.getElementById("enrollBtn").value = "Enroll";
+            setEnrollButtonEnabled(true);
         }
     };
 
     xhr.onerror = function () {
         alert("Failed to reach the local server at " + ENROLL_API_URL + ". Make sure serve.py is running.");
-        setActionButton("enroll", "Enroll", true);
+        document.getElementById("enrollBtn").value = "Enroll";
+        setEnrollButtonEnabled(true);
     };
 
     xhr.send(JSON.stringify(entries));
