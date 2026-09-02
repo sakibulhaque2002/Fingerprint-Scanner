@@ -6,7 +6,7 @@
 <link href="./Secugen-Demo1 - SecuGen Corporation_files/bootstrap.css" rel="stylesheet">
 <link href="./Secugen-Demo1 - SecuGen Corporation_files/Site.css" rel="stylesheet">
 <link href="https://webapi.secugen.com/favicon.ico" rel="shortcut icon" type="image/x-icon"></head>
-<body onload="initializeSiteShell();" class=" view-mode-mobile" style="">
+<body onload="loadConfigAndInit();" class=" view-mode-mobile" style="">
     <form method="post" action="https://webapi.secugen.com/Demo1" id="ctl01">
 <div class="aspNetHidden">
 <input type="hidden" name="__EVENTTARGET" id="__EVENTTARGET" value="">
@@ -97,7 +97,12 @@ Sys.WebForms.PageRequestManager._initialize('ctl00$ctl07', 'ctl01', [], [], [], 
 
 // RSA public key used to encrypt fingerprint templates before they leave the browser.
 // Mirrors BioEncryptUtil.encryptAsChunksWithRsa on the backend (RSA/ECB/PKCS1Padding, 117-byte chunks).
+// Built-in fallback only -- overwritten by applyClientConfig() from config.json's
+// client.rsaPublicKeyBase64 once that loads (see loadConfigAndInit() further down).
 var SECUGEN_RSA_PUBLIC_KEY_B64 = "MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQCiyYkrQi8AbaCzeuDjY21D+uy3hLVSRmCkXv6MPrBB/ditNi3w5b6OYm+k1YS5xHR14B80gCmRK2zZCKZJ62xtvch3GWWOJ5OA0cvYOCVWY1c3tG5+EWC6oQj4C6ORE+Oh2jxVPoCJxlCApWIJpESj05LNy3ODvRAqdxSxqzw5TwIDAQAB";
+// 117 = 128-byte modulus (this is a 1024-bit key) minus 11 bytes of PKCS1v1.5 padding
+// overhead. If config.json's key ever changes to a different key SIZE (not just a
+// different 1024-bit key), this must be updated too: chunk size = (bits/8) - 11.
 var BIO_ENCRYPT_CHUNK_SIZE = 117;
 var BIO_ENCRYPT_CHUNK_SEPARATOR = ";";
 
@@ -132,29 +137,51 @@ function encryptAsChunksWithRsa(compressedText, publicKeyBase64) {
     return chunks.join(BIO_ENCRYPT_CHUNK_SEPARATOR);
 }
 
+// Built-in fallback only -- overwritten by applyClientConfig() from config.json's
+// client.fingers once that loads (see loadConfigAndInit() further down). "part" must
+// be one of "little"/"ring"/"middle"/"index"/"thumb", the five shapes the hand-guide
+// SVG knows how to draw highlighted (see handGuideSvg()); "mirror" flips the guide
+// for a left-hand finger. Standard 0-9 finger index table:
+//   0 Left little   1 Left ring   2 Left middle   3 Left index   4 Left thumb
+//   5 Right thumb   6 Right index   7 Right middle   8 Right ring   9 Right little
 var FINGERS = [
+    { value: 0, label: "Left Little Finger", part: "little", mirror: true },
+    { value: 1, label: "Left Ring Finger", part: "ring", mirror: true },
+    { value: 2, label: "Left Middle Finger", part: "middle", mirror: true },
     { value: 3, label: "Left Index Finger", part: "index", mirror: true },
     { value: 4, label: "Left Thumb Finger", part: "thumb", mirror: true },
     { value: 5, label: "Right Thumb Finger", part: "thumb", mirror: false },
-    { value: 6, label: "Right Index Finger", part: "index", mirror: false }
+    { value: 6, label: "Right Index Finger", part: "index", mirror: false },
+    { value: 7, label: "Right Middle Finger", part: "middle", mirror: false },
+    { value: 8, label: "Right Ring Finger", part: "ring", mirror: false },
+    { value: 9, label: "Right Little Finger", part: "little", mirror: false }
 ];
+
+/*
+    Built-in fallbacks, used until config.json loads (or if it fails to load,
+    or a key is missing from it) -- see applyClientConfig()/loadConfigAndInit()
+    further down. serve.py serves config.json's "client" section only; the
+    enrollment API URL/credential in its "server" section never reaches here.
+*/
 var DEFAULT_FINGER_VALUE = 5;
+var MATCH_SCORE_THRESHOLD = 100; // "Match Score" threshold, same default the old Verify App demo used
+var SGI_BIOSRV_BASE_URL = "https://localhost:8443";
+var CAPTURE_TIMEOUT_MS = 10000;
+var CAPTURE_QUALITY = 50;
+var CAPTURE_WSQ_RATE = 0.75;
+
 var currentFingerIndex = FINGERS.findIndex(function (f) { return f.value === DEFAULT_FINGER_VALUE; });
 var scannedFingerprints = []; // per finger: { fingerprint, confirmFingerprint } once both scans match
 var scannedImages = [];
 var pendingFirstTemplate = []; // per finger: raw (unencrypted) TemplateBase64 from scan 1, awaiting the confirmation scan
 
-// Default "Match Score" threshold from the old Verify App demo (Secugen-Demo3), which
-// compared two raw templates via the local SGIMatchScore service and required score >= 100.
-var MATCH_SCORE_THRESHOLD = 100;
-
 /*
     Simple line-art hand icon used as a placement guide before a finger is
-    scanned: same base "right hand" drawing for both the thumb and index
-    guides, just with a different part highlighted, then flipped
-    horizontally (via CSS transform, not separate artwork) for the left
-    hand. Once a real scan comes back its BMP image replaces this and the
-    transform is reset to "none".
+    scanned: same base "right hand" drawing for every finger, just with a
+    different digit (little/ring/middle/index/thumb) highlighted, then
+    flipped horizontally (via CSS transform, not separate artwork) for the
+    left hand. Once a real scan comes back its BMP image replaces this and
+    the transform is reset to "none".
 */
 var HAND_GUIDE_NEUTRAL_FILL = "#d7dfe8";
 var HAND_GUIDE_NEUTRAL_STROKE = "#8493a8";
@@ -171,9 +198,9 @@ function handGuideFingerRect(x, y, height, hot) {
 
 function handGuideSvg(part) {
     var svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="-12 0 140 200">';
-    svg += handGuideFingerRect(91, 72, 76, false);              // pinky
-    svg += handGuideFingerRect(72, 48, 100, false);              // ring
-    svg += handGuideFingerRect(53, 40, 108, false);              // middle
+    svg += handGuideFingerRect(91, 72, 76, part === "little");   // little
+    svg += handGuideFingerRect(72, 48, 100, part === "ring");    // ring
+    svg += handGuideFingerRect(53, 40, 108, part === "middle");  // middle
     svg += handGuideFingerRect(34, 60, 88, part === "index");    // index
     svg += '<rect x="-5" y="142" width="54" height="24" rx="12" fill="' +
         (part === "thumb" ? HAND_GUIDE_HILITE_FILL : HAND_GUIDE_NEUTRAL_FILL) + '" stroke="' +
@@ -247,7 +274,7 @@ function updateScanCountLabel() {
     var count = scannedFingerprints.filter(function (t) { return !!t; }).length;
     var label = document.getElementById("scanCountLabel");
     if (label) {
-        label.textContent = count + " of " + FINGERS.length + " fingers scanned";
+        label.textContent = count + (count === 1 ? " finger scanned" : " fingers scanned");
     }
 }
 
@@ -464,7 +491,7 @@ function ErrorFunc(status) {
 
 function CallSGIFPGetData(successCall, failCall) {
     // 8.16.2017 - At this time, only SSL client will be supported.
-    var uri = "https://localhost:8443/SGIFPCapture";
+    var uri = SGI_BIOSRV_BASE_URL + "/SGIFPCapture";
 
     var xmlhttp = new XMLHttpRequest();
     xmlhttp.onreadystatechange = function () {
@@ -476,12 +503,11 @@ function CallSGIFPGetData(successCall, failCall) {
             failCall(xmlhttp.status)
         }
     }
-    var params = "Timeout=" + "10000";
-    params += "&Quality=" + "50";
+    var params = "Timeout=" + CAPTURE_TIMEOUT_MS;
+    params += "&Quality=" + CAPTURE_QUALITY;
     params += "&licstr=" + encodeURIComponent(secugen_lic);
     params += "&templateFormat=" + "ISO";
-    params += "&imageWSQRate=" + "0.75";
-    console.log
+    params += "&imageWSQRate=" + CAPTURE_WSQ_RATE;
     xmlhttp.open("POST", uri, true);
     xmlhttp.send(params);
 
@@ -499,7 +525,7 @@ function CallSGIFPGetData(successCall, failCall) {
     afterwards, once a pair is confirmed as a match.
 */
 function callSGIMatchScore(template1, template2, successCall, failCall) {
-    var uri = "https://localhost:8443/SGIMatchScore";
+    var uri = SGI_BIOSRV_BASE_URL + "/SGIMatchScore";
 
     var xmlhttp = new XMLHttpRequest();
     xmlhttp.onreadystatechange = function () {
@@ -590,15 +616,131 @@ function callSGIMatchScore(template1, template2, successCall, failCall) {
         applyViewMode(getSavedViewMode());
     }
 
+    /*
+        Rebuilds the Finger dropdown's <option> list from FINGERS, so the
+        markup can never drift out of sync with whichever fingers ended up
+        active -- the built-in fallback list, or config.json's client.fingers.
+    */
+    function renderFingerSelectOptions() {
+        var select = document.getElementById("fingerSelect");
+        if (!select) {
+            return;
+        }
+        select.innerHTML = "";
+        for (var i = 0; i < FINGERS.length; i++) {
+            var finger = FINGERS[i];
+            var option = document.createElement("option");
+            option.value = finger.value;
+            option.textContent = finger.value + " - " + finger.label;
+            select.appendChild(option);
+        }
+    }
+
+    function syncFingerSelectValue() {
+        var select = document.getElementById("fingerSelect");
+        if (select && FINGERS[currentFingerIndex]) {
+            select.value = String(FINGERS[currentFingerIndex].value);
+        }
+    }
+
     function initializeSiteShell() {
         setFormAction();
         initializeViewModeSwitch();
+        renderFingerSelectOptions();
+        syncFingerSelectValue();
         updateFingerUI();
     }
 
     // nice global area, so that only 1 location, contains this information
-    // var secugen_lic = "4cHp0Lzuh9c1sOO0gOOBHTexvO/vmty0WdKa4s2AwwFUkPrTcLeHEo3wK9W15RwS";   // webapi-javascript.lan.secugen.com - 6/1/26
+    // Overwritten by applyClientConfig() once config.json loads, below.
     var secugen_lic = "";
+
+    /*
+        Applies the client-safe settings served from config.json (see
+        serve.py, which strips the enrollment API URL/credential out of
+        its "server" section before sending this). Any field missing or
+        of the wrong type just keeps its built-in fallback value.
+    */
+    function applyClientConfig(cfg) {
+        if (typeof cfg.secugenLicense === "string") {
+            secugen_lic = cfg.secugenLicense;
+        }
+        if (typeof cfg.rsaPublicKeyBase64 === "string" && cfg.rsaPublicKeyBase64 !== "") {
+            SECUGEN_RSA_PUBLIC_KEY_B64 = cfg.rsaPublicKeyBase64;
+        }
+        if (typeof cfg.matchScoreThreshold === "number") {
+            MATCH_SCORE_THRESHOLD = cfg.matchScoreThreshold;
+        }
+        if (typeof cfg.sgiBioSrvBaseUrl === "string" && cfg.sgiBioSrvBaseUrl !== "") {
+            SGI_BIOSRV_BASE_URL = cfg.sgiBioSrvBaseUrl;
+        }
+        if (cfg.capture) {
+            if (typeof cfg.capture.timeoutMs === "number") {
+                CAPTURE_TIMEOUT_MS = cfg.capture.timeoutMs;
+            }
+            if (typeof cfg.capture.quality === "number") {
+                CAPTURE_QUALITY = cfg.capture.quality;
+            }
+            if (typeof cfg.capture.imageWsqRate === "number") {
+                CAPTURE_WSQ_RATE = cfg.capture.imageWsqRate;
+            }
+        }
+        var VALID_HAND_GUIDE_PARTS = ["little", "ring", "middle", "index", "thumb"];
+        if (Array.isArray(cfg.fingers) && cfg.fingers.length > 0) {
+            var validFingers = cfg.fingers.filter(function (f) {
+                return f && typeof f.value === "number" && typeof f.label === "string";
+            }).map(function (f) {
+                return {
+                    value: f.value,
+                    label: f.label,
+                    part: (VALID_HAND_GUIDE_PARTS.indexOf(f.part) !== -1) ? f.part : "index", // anything else falls back to "index"
+                    mirror: !!f.mirror
+                };
+            });
+            if (validFingers.length > 0) {
+                FINGERS = validFingers;
+            }
+        }
+        if (typeof cfg.defaultFingerValue === "number") {
+            DEFAULT_FINGER_VALUE = cfg.defaultFingerValue;
+        }
+        // Re-resolve against the final FINGERS list -- it may have just been
+        // replaced above, and/or DEFAULT_FINGER_VALUE may not exist in it.
+        var idx = FINGERS.findIndex(function (f) { return f.value === DEFAULT_FINGER_VALUE; });
+        currentFingerIndex = (idx !== -1) ? idx : 0;
+    }
+
+    /*
+        Loads config.json before the rest of the page initializes. Falls
+        back to the built-in defaults declared earlier in this file if the
+        request fails, times out, or returns invalid JSON -- e.g. if this
+        page is opened without serve.py running.
+    */
+    function loadConfigAndInit() {
+        var xhr = new XMLHttpRequest();
+        xhr.onreadystatechange = function () {
+            if (xhr.readyState === 4) {
+                if (xhr.status === 200) {
+                    try {
+                        applyClientConfig(JSON.parse(xhr.responseText));
+                    }
+                    catch (e) {
+                        console.error("config.json was not valid JSON; using built-in defaults.", e);
+                    }
+                }
+                else {
+                    console.error("Could not load config.json (status " + xhr.status + "); using built-in defaults.");
+                }
+                initializeSiteShell();
+            }
+        };
+        xhr.onerror = function () {
+            console.error("Could not load config.json; using built-in defaults.");
+            initializeSiteShell();
+        };
+        xhr.open("GET", "config.json", true);
+        xhr.send();
+    }
 
     function ErrorCodeToString(ErrorCode) {
         var Description;

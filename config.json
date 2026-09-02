@@ -1,0 +1,31 @@
+{
+    "server": {
+        "port": 8080,
+        "enrollApiUrl": "http://10.140.0.33:8079/enroll/fingers",
+        "enrollApiAuthorization": "Basic Z3Vlc3Q6Z3Vlc3Q="
+    },
+    "client": {
+        "secugenLicense": "",
+        "rsaPublicKeyBase64": "MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQCiyYkrQi8AbaCzeuDjY21D+uy3hLVSRmCkXv6MPrBB/ditNi3w5b6OYm+k1YS5xHR14B80gCmRK2zZCKZJ62xtvch3GWWOJ5OA0cvYOCVWY1c3tG5+EWC6oQj4C6ORE+Oh2jxVPoCJxlCApWIJpESj05LNy3ODvRAqdxSxqzw5TwIDAQAB",
+        "matchScoreThreshold": 100,
+        "defaultFingerValue": 5,
+        "fingers": [
+            { "value": 0, "label": "Left Little Finger", "part": "little", "mirror": true },
+            { "value": 1, "label": "Left Ring Finger", "part": "ring", "mirror": true },
+            { "value": 2, "label": "Left Middle Finger", "part": "middle", "mirror": true },
+            { "value": 3, "label": "Left Index Finger", "part": "index", "mirror": true },
+            { "value": 4, "label": "Left Thumb Finger", "part": "thumb", "mirror": true },
+            { "value": 5, "label": "Right Thumb Finger", "part": "thumb", "mirror": false },
+            { "value": 6, "label": "Right Index Finger", "part": "index", "mirror": false },
+            { "value": 7, "label": "Right Middle Finger", "part": "middle", "mirror": false },
+            { "value": 8, "label": "Right Ring Finger", "part": "ring", "mirror": false },
+            { "value": 9, "label": "Right Little Finger", "part": "little", "mirror": false }
+        ],
+        "sgiBioSrvBaseUrl": "https://localhost:8443",
+        "capture": {
+            "timeoutMs": 10000,
+            "quality": 50,
+            "imageWsqRate": 0.75
+        }
+    }
+}
