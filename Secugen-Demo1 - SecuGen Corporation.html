@@ -140,8 +140,13 @@ var FINGERS = [
 ];
 var DEFAULT_FINGER_VALUE = 5;
 var currentFingerIndex = FINGERS.findIndex(function (f) { return f.value === DEFAULT_FINGER_VALUE; });
-var scannedFingerprints = [];
+var scannedFingerprints = []; // per finger: { fingerprint, confirmFingerprint } once both scans match
 var scannedImages = [];
+var pendingFirstTemplate = []; // per finger: raw (unencrypted) TemplateBase64 from scan 1, awaiting the confirmation scan
+
+// Default "Match Score" threshold from the old Verify App demo (Secugen-Demo3), which
+// compared two raw templates via the local SGIMatchScore service and required score >= 100.
+var MATCH_SCORE_THRESHOLD = 100;
 
 /*
     Simple line-art hand icon used as a placement guide before a finger is
@@ -210,6 +215,32 @@ function updateFingerUI() {
         showFingerGuideImage(currentFingerIndex);
     }
     updateScanCountLabel();
+    updateActionButtonForStage();
+}
+
+/*
+    Each finger goes: unscanned -> awaiting-confirm (first scan captured,
+    waiting on a second scan of the same finger to verify against) ->
+    confirmed (the two scans matched and were encrypted into the final pair).
+*/
+function fingerScanStage(fingerIndex) {
+    if (pendingFirstTemplate[fingerIndex]) {
+        return "awaiting-confirm";
+    }
+    if (scannedFingerprints[fingerIndex]) {
+        return "confirmed";
+    }
+    return "unscanned";
+}
+
+function updateActionButtonForStage() {
+    var stage = fingerScanStage(currentFingerIndex);
+    if (stage === "awaiting-confirm") {
+        setActionButton("Scan Again to Confirm", true);
+    }
+    else {
+        setActionButton("Scan", true);
+    }
 }
 
 function updateScanCountLabel() {
@@ -254,6 +285,9 @@ function performScan(fingerIndex) {
         return;
     }
 
+    // Captured before the scan starts: decides whether this capture is the
+    // first scan of this finger or the confirmation scan to match against it.
+    var stage = fingerScanStage(fingerIndex);
     setActionButton("Scanning...", false);
 
     CallSGIFPGetData(function (result) {
@@ -263,33 +297,79 @@ function performScan(fingerIndex) {
             */
             if (result.BMPBase64 && result.BMPBase64.length > 0) {
                 scannedImages[fingerIndex] = result.BMPBase64;
-                showScannedImage(fingerIndex);
             }
-            scannedFingerprints[fingerIndex] = encryptAsChunksWithRsa(result.TemplateBase64, SECUGEN_RSA_PUBLIC_KEY_B64);
 
-            updateScanCountLabel();
-            showScannedResult();
-            setActionButton("Scan", true);
-            setEnrollButtonEnabled(true);
+            if (stage === "awaiting-confirm") {
+                confirmScan(fingerIndex, result.TemplateBase64);
+            }
+            else {
+                if (stage === "confirmed") {
+                    // Re-scanning an already-confirmed finger starts the
+                    // whole verify-pair over; drop the old confirmed pair.
+                    scannedFingerprints[fingerIndex] = null;
+                }
+                pendingFirstTemplate[fingerIndex] = result.TemplateBase64;
+                showScannedResult();
+                updateFingerUI();
+            }
         }
         else {
             alert("Fingerprint Capture Error Code:  " + result.ErrorCode + ".\nDescription:  " + ErrorCodeToString(result.ErrorCode) + ".");
-            setActionButton("Scan", true);
+            updateFingerUI();
         }
     }, function (status) {
         ErrorFunc(status);
-        setActionButton("Scan", true);
+        updateFingerUI();
+    });
+}
+
+/*
+    Matches the just-captured second scan against the first scan of the same
+    finger via the local SGIMatchScore service (same endpoint/contract used
+    by the old Verify App demo). Only on a successful match are the two raw
+    templates individually RSA-encrypted into the final { fingerprint,
+    confirmFingerprint } pair; on any failure both raw templates are
+    discarded and the user has to scan this finger again from scratch.
+*/
+function confirmScan(fingerIndex, secondRawTemplate) {
+    var firstRawTemplate = pendingFirstTemplate[fingerIndex];
+    var finger = FINGERS[fingerIndex];
+    setActionButton("Verifying match...", false);
+
+    callSGIMatchScore(firstRawTemplate, secondRawTemplate, function (result) {
+        if (result.ErrorCode == 0 && result.MatchingScore >= MATCH_SCORE_THRESHOLD) {
+            scannedFingerprints[fingerIndex] = {
+                fingerprint: encryptAsChunksWithRsa(firstRawTemplate, SECUGEN_RSA_PUBLIC_KEY_B64),
+                confirmFingerprint: encryptAsChunksWithRsa(secondRawTemplate, SECUGEN_RSA_PUBLIC_KEY_B64)
+            };
+            pendingFirstTemplate[fingerIndex] = null;
+            showScannedResult();
+            setEnrollButtonEnabled(true);
+        }
+        else {
+            var reason = result.ErrorCode == 0
+                ? "the two scans did not match closely enough (score " + result.MatchingScore + ", need " + MATCH_SCORE_THRESHOLD + ")"
+                : "the match check failed (error code " + result.ErrorCode + ")";
+            alert("Fingerprint confirmation failed: " + reason + ".\nPlease scan the " + finger.label + " again, starting from the first scan.");
+            pendingFirstTemplate[fingerIndex] = null;
+        }
+        updateFingerUI();
+    }, function (status) {
+        alert("Could not reach the fingerprint match service (SGIBioSrv). Status: " + status);
+        pendingFirstTemplate[fingerIndex] = null;
+        updateFingerUI();
     });
 }
 
 function buildEnrollEntry(fingerIndex) {
     var userVal = document.getElementById("userName").value.trim();
     var finger = FINGERS[fingerIndex];
+    var pair = scannedFingerprints[fingerIndex];
     return {
         finger: finger.value,
         user: userVal,
-        fingerprint: scannedFingerprints[fingerIndex],
-        confirmFingerprint: scannedFingerprints[fingerIndex]
+        fingerprint: pair.fingerprint,
+        confirmFingerprint: pair.confirmFingerprint
     };
 }
 
@@ -402,6 +482,39 @@ function CallSGIFPGetData(successCall, failCall) {
     params += "&templateFormat=" + "ISO";
     params += "&imageWSQRate=" + "0.75";
     console.log
+    xmlhttp.open("POST", uri, true);
+    xmlhttp.send(params);
+
+    xmlhttp.onerror = function () {
+        failCall(xmlhttp.statusText);
+    }
+}
+
+/*
+    Ported from the old Verify App demo (Secugen-Demo3's matchScore()): sends
+    two raw ISO templates to the local SGIMatchScore service and gets back a
+    similarity score. Matching happens here, on the raw templates, because
+    SGIBioSrv's matcher needs real minutiae geometry -- it can't compare two
+    RSA-encrypted blobs. Encryption (encryptAsChunksWithRsa) only happens
+    afterwards, once a pair is confirmed as a match.
+*/
+function callSGIMatchScore(template1, template2, successCall, failCall) {
+    var uri = "https://localhost:8443/SGIMatchScore";
+
+    var xmlhttp = new XMLHttpRequest();
+    xmlhttp.onreadystatechange = function () {
+        if (xmlhttp.readyState == 4 && xmlhttp.status == 200) {
+            var result = JSON.parse(xmlhttp.responseText);
+            successCall(result);
+        }
+        else if (xmlhttp.readyState == 4 && xmlhttp.status == 404) {
+            failCall(xmlhttp.status);
+        }
+    }
+    var params = "template1=" + encodeURIComponent(template1);
+    params += "&template2=" + encodeURIComponent(template2);
+    params += "&licstr=" + encodeURIComponent(secugen_lic);
+    params += "&templateFormat=" + "ISO";
     xmlhttp.open("POST", uri, true);
     xmlhttp.send(params);
 
